@@ -222,3 +222,4 @@ data/
 output/
 .env.*
 !.env.example
+rf-detr-medium.pth
