@@ -95,6 +95,14 @@ class DatasetAuditTests(unittest.TestCase):
         self.assertEqual(sum(p['confirmed'] for p in pairs),1)
         self.assertEqual(sum(not p['confirmed'] for p in pairs),2)
         self.assertTrue(all(records[p['left']]['split']!=records[p['right']]['split'] for p in pairs))
+    def test_leakage_same_source_different_images_not_flagged(self):
+        import hashlib
+        records=[
+            dict(split='train',file_name='IMG_1152_train.jpg',source='IMG_1152_JPG',pixel_hash='p1',phash='0000000000000000'),
+            dict(split='test',file_name='IMG_1152_test.jpg',source='IMG_1152_JPG',pixel_hash='p2',phash='ffffffff00000000')]
+        ns=definitions({'find_leakage_pairs'},dict(np=np,hashlib=hashlib))
+        pairs=ns['find_leakage_pairs'](records)
+        self.assertEqual(len(pairs),0)
     def test_corrupt_and_invalid_annotations_block(self):
         import hashlib,re
         import imagehash
