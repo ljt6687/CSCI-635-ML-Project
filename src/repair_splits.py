@@ -18,9 +18,10 @@ import hashlib
 import json
 import os
 import random
+import re
 import shutil
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import networkx as nx
 import numpy as np
@@ -30,27 +31,37 @@ import imagehash
 
 
 def deduplicate_ditto_copies(image_records: List[Dict]) -> Tuple[List[Dict], int]:
-    """Remove exact duplicate copies (identical pHash distance 0)."""
+    """Remove exact duplicate copies (identical pHash distance 0 for the same source)."""
     seen_hashes = {}
     unique_records = []
     removed_count = 0
     for r in image_records:
-        h = r['phash']
-        if h in seen_hashes:
+        key = (r['source'], r['phash'])
+        if key in seen_hashes:
             removed_count += 1
         else:
-            seen_hashes[h] = r
+            seen_hashes[key] = r
             unique_records.append(r)
     return unique_records, removed_count
 
 
 def cluster_similar_images(records: List[Dict], max_distance: int = 4) -> List[List[int]]:
-    """Group images into connected components where pHash Hamming distance <= max_distance."""
-    hashes = np.array([int(r['phash'], 16) for r in records], dtype=np.uint64)
-    popcount = np.array([int(x).bit_count() for x in range(256)], dtype=np.uint8)
+    """Group images into connected components where same source prefix OR pHash Hamming distance <= max_distance."""
     n = len(records)
     G = nx.Graph()
     G.add_nodes_from(range(n))
+
+    # 1. Connect images sharing the same source prefix (Roboflow augmentations: flips, 90-deg rotations, exposure)
+    source_groups = {}
+    for i, r in enumerate(records):
+        source_groups.setdefault(r['source'], []).append(i)
+    for indices in source_groups.values():
+        for k in range(len(indices) - 1):
+            G.add_edge(indices[k], indices[k + 1])
+
+    # 2. Connect images within pHash Hamming distance <= max_distance (temporal camera bursts and near-duplicates)
+    hashes = np.array([int(r['phash'], 16) for r in records], dtype=np.uint64)
+    popcount = np.array([int(x).bit_count() for x in range(256)], dtype=np.uint8)
 
     chunk_size = 500
     for i in range(0, n, chunk_size):
@@ -74,17 +85,26 @@ def cluster_similar_images(records: List[Dict], max_distance: int = 4) -> List[L
 
 def assign_clusters_to_splits(
     clusters: List[List[int]],
-    val_target: int = 380,
-    test_target: int = 380,
-    max_eval_cluster_size: int = 2,
+    train_ratio: float = 0.70,
+    val_ratio: float = 0.15,
+    test_ratio: float = 0.15,
+    val_target: Optional[int] = None,
+    test_target: Optional[int] = None,
+    max_eval_cluster_size: int = 4,
     seed: int = 42
 ) -> Dict[str, List[List[int]]]:
     """Assign clusters to train, val, and test splits with burst-skew protection.
 
     Clusters larger than max_eval_cluster_size are allocated to `train` to prevent
     burst sequences from skewing the evaluation sets. Val and test are sampled from
-    small, diverse clusters and singletons.
+    small, diverse clusters (<= max_eval_cluster_size).
     """
+    total_images = sum(len(c) for c in clusters)
+    if val_target is None:
+        val_target = int(total_images * val_ratio)
+    if test_target is None:
+        test_target = int(total_images * test_ratio)
+
     rng = random.Random(seed)
 
     large_clusters = [c for c in clusters if len(c) > max_eval_cluster_size]
@@ -118,16 +138,33 @@ def assign_clusters_to_splits(
 def repair_dataset_splits(
     raw_dir: Path,
     clean_dir: Path,
-    val_target: int = 380,
-    test_target: int = 380,
+    train_ratio: float = 0.70,
+    val_ratio: float = 0.15,
+    test_ratio: float = 0.15,
+    val_target: Optional[int] = None,
+    test_target: Optional[int] = None,
     max_distance: int = 4,
-    max_eval_cluster_size: int = 2,
-    seed: int = 42
+    max_eval_cluster_size: int = 4,
+    seed: int = 42,
+    inventory_csv: Optional[Path] = None
 ) -> Dict[str, int]:
     """Execute the end-to-end dataset repair and split generation."""
     raw_dir = Path(raw_dir)
     clean_dir = Path(clean_dir)
     clean_dir.mkdir(parents=True, exist_ok=True)
+
+    # Optional fast metadata lookup from inventory CSV
+    inventory_map = {}
+    if inventory_csv and Path(inventory_csv).exists():
+        inv_df = pd.read_csv(inventory_csv)
+        for _, row in inv_df.iterrows():
+            inventory_map[row['file_name']] = {
+                'width': int(row['width']),
+                'height': int(row['height']),
+                'phash': str(row['phash']),
+                'pixel_hash': str(row['pixel_hash']),
+                'source': str(row['source'])
+            }
 
     # 1. Load all original COCO documents and images
     docs = {}
@@ -148,20 +185,31 @@ def repair_dataset_splits(
             img_path = raw_dir / split / img['file_name']
             if not img_path.exists():
                 continue
-            with Image.open(img_path) as im:
-                im.load()
-                rgb = im.convert('RGB')
-                w, h = rgb.size
-                phash = str(imagehash.phash(rgb))
-                pixel_hash = hashlib.sha256(f'{w}x{h}'.encode() + rgb.tobytes()).hexdigest()
+
+            fn = img['file_name']
+            if fn in inventory_map:
+                cached = inventory_map[fn]
+                w, h = cached['width'], cached['height']
+                phash = cached['phash']
+                pixel_hash = cached['pixel_hash']
+                source = cached['source']
+            else:
+                with Image.open(img_path) as im:
+                    im.load()
+                    rgb = im.convert('RGB')
+                    w, h = rgb.size
+                    phash = str(imagehash.phash(rgb))
+                    pixel_hash = hashlib.sha256(f'{w}x{h}'.encode() + rgb.tobytes()).hexdigest()
+                source = re.sub(r'\.rf\..*$', '', fn)
 
             image_records.append({
                 'orig_split': split,
                 'orig_id': img['id'],
-                'file_name': img['file_name'],
+                'file_name': fn,
                 'path': str(img_path),
                 'width': w,
                 'height': h,
+                'source': source,
                 'phash': phash,
                 'pixel_hash': pixel_hash
             })
@@ -169,12 +217,15 @@ def repair_dataset_splits(
     # 2. Deduplicate exact duplicate copies
     unique_records, removed_dups = deduplicate_ditto_copies(image_records)
 
-    # 3. Cluster similar images (pHash distance <= max_distance)
+    # 3. Cluster similar images (same source prefix OR pHash distance <= max_distance)
     clusters = cluster_similar_images(unique_records, max_distance=max_distance)
 
-    # 4. Partition clusters into train, valid, test
+    # 4. Partition clusters into 70:15:15 train, valid, test
     splits = assign_clusters_to_splits(
         clusters,
+        train_ratio=train_ratio,
+        val_ratio=val_ratio,
+        test_ratio=test_ratio,
         val_target=val_target,
         test_target=test_target,
         max_eval_cluster_size=max_eval_cluster_size,
@@ -247,7 +298,7 @@ def repair_dataset_splits(
         'project': 'squirrel-re-id-training-v1-fzpbr',
         'format': 'coco',
         'license': 'CC BY 4.0',
-        'source': 'Repaired leak-free splits with burst grouping and duplicate removal',
+        'source': 'Repaired leak-free 70:15:15 splits with burst grouping, prefix isolation, and duplicate removal',
         'annotation_hashes': {
             s: hashlib.sha256((clean_dir / s / '_annotations.coco.json').read_bytes()).hexdigest()
             for s in ['train', 'valid', 'test']
@@ -261,21 +312,29 @@ def main():
     parser = argparse.ArgumentParser(description='Repair dataset splits to guarantee 0 cross-split leakage.')
     parser.add_argument('--raw_dir', type=Path, default=Path('data/squirrel-v6-coco'))
     parser.add_argument('--clean_dir', type=Path, default=Path('data/squirrel-v6-clean'))
-    parser.add_argument('--val_target', type=int, default=380)
-    parser.add_argument('--test_target', type=int, default=380)
+    parser.add_argument('--train_ratio', type=float, default=0.70)
+    parser.add_argument('--val_ratio', type=float, default=0.15)
+    parser.add_argument('--test_ratio', type=float, default=0.15)
+    parser.add_argument('--val_target', type=int, default=None)
+    parser.add_argument('--test_target', type=int, default=None)
     parser.add_argument('--max_distance', type=int, default=4)
-    parser.add_argument('--max_eval_cluster_size', type=int, default=2)
+    parser.add_argument('--max_eval_cluster_size', type=int, default=4)
     parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--inventory_csv', type=Path, default=None)
 
     args = parser.parse_args()
     stats = repair_dataset_splits(
         raw_dir=args.raw_dir,
         clean_dir=args.clean_dir,
+        train_ratio=args.train_ratio,
+        val_ratio=args.val_ratio,
+        test_ratio=args.test_ratio,
         val_target=args.val_target,
         test_target=args.test_target,
         max_distance=args.max_distance,
         max_eval_cluster_size=args.max_eval_cluster_size,
-        seed=args.seed
+        seed=args.seed,
+        inventory_csv=args.inventory_csv
     )
     print('Repair complete:')
     print(json.dumps(stats, indent=2))
