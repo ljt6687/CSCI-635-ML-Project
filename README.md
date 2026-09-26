@@ -2,6 +2,45 @@
 
 The complete workflow is in [squirrel_detection_rfdetr_medium.ipynb](squirrel_detection_rfdetr_medium.ipynb): Roboflow v6 download, dataset audit and EDA, ClearML tracking, memory probe, training, validation/test reports, and verified best-weight export.
 
+## Multiclass v2 dataset audit and training
+
+The 11-class v2 workflow uses ten named species plus `generic_squirrel`. Its
+source dataset is `data/squirrel-v2-clean`; that directory is never changed by
+the audit or exporter. Complete the audit and review its evidence before
+creating the versioned training export:
+
+```bash
+# Review the completed audit and its evidence first.
+cat output/v2_annotation/audit_v2/report.md
+uv run python scripts/export_squirrel_v2_audited_coco.py
+uv run jupyter lab squirrel_detection_rfdetr_medium_v2.ipynb
+```
+
+The exporter stops unless the reviewed `decisions.json` has passing QA and no
+unresolved cases. To start a fresh audit, use a new output directory, such as
+`uv run python scripts/audit_squirrel_v2_purity.py --embeddings --output
+output/v2_annotation/audit_v2_refresh`. A full audit refuses to overwrite an
+existing decision file. Continuation flags such as `--embeddings-only` update
+specific analyses while preserving reviewed decisions. Point the exporter at
+the reviewed new decision file with `--decisions` and use a new `--destination`
+for another immutable export.
+
+The exporter requires `decisions.json` to match the source annotation
+fingerprint, contain no unresolved cases, and record a passing quality audit.
+It excludes unusable images and evidence-backed bad annotations, removes exact duplicate images, keeps observation
+and pHash Hamming-distance-4 perceptual-risk groups within one split, and writes resized,
+orientation-corrected RGB images and COCO labels to
+`data/squirrel-v2-audited-coco/`. Review findings remain under
+`output/v2_annotation/audit_v2/`; the export records every removal and move in
+`decisions_applied.json` and its counts in `export_summary.json`.
+
+The v2 notebook requires that audited export and checks its manifest and
+annotations before training. Its train loader uses moderate class-aware
+sampling; validation and test retain their natural distributions. The notebook
+does not build the dataset implicitly. Running the notebook's training cell
+starts the full 50-epoch experiment, so run its audit and memory-probe cells
+first when validating a new export.
+
 ## Setup
 
 ```bash
