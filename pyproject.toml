@@ -27,6 +27,12 @@ dependencies = [
 csci-635-ml-project = "csci_635_ml_project:main"
 
 [project.optional-dependencies]
+yolo = [
+    "filelock==4.0.3",
+    "ultralytics==8.4.164",
+    "seaborn>=0.13,<0.14",
+    "tensorboard>=2.20,<3",
+]
 review = [
     "pylabel==0.1.55",
 ]
