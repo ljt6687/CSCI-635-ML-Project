@@ -168,3 +168,67 @@ training epochs, and short benchmarks. Smoke runs are separate from production
 baselines and cannot enter the default comparison. Preparation downloads the
 pinned original YOLOv5 source and pretrained assets when absent; it does not
 run the full experiments or modify the existing RF-DETR notebook.
+
+
+## Dataset download and setup
+
+To skip running the full audit and export pipeline from scratch, download the pre-built, audited multiclass v2 COCO export archive:
+
+- **Google Drive link:** [`squirrel-v2-audited-coco.zip` (Google Drive)](https://drive.google.com/file/d/1WWIY89soGJR2hDTC6zQyS0NiTU_e5AgV/view?usp=sharing)
+- **Archive size:** ~2.9 GB compressed (~3.0 GB uncompressed)
+- **Format:** COCO detection format (RGB images + JSON annotations)
+- **Classes (11):** 10 squirrel species (`Callosciurus erythraeus`, `Sciurus aureogaster`, `Sciurus carolinensis`, `Sciurus granatensis`, `Sciurus griseus`, `Sciurus lis`, `Sciurus niger`, `Sciurus vulgaris`, `Tamiasciurus douglasii`, `Tamiasciurus hudsonicus`) plus `generic_squirrel`.
+- **Splits:** 8,554 images and 9,109 bounding-box annotations across `train` (5,988), `valid` (1,282), and `test` (1,284).
+- **Leakage mitigation:** Identical observations and pHash perceptual risk groups (Hamming distance $\le 4$) are grouped into single splits; false positives (e.g., tracks, domestic cats, raccoons, stationary branches) and exact pixel duplicates have been removed. Includes the `.complete.json` manifest required by the training notebooks.
+
+### Guided installation
+
+#### Option 1: Command line (`gdown`)
+
+You can download and extract directly using `gdown` via `uv`:
+
+```bash
+mkdir -p data
+uv run --with gdown gdown "https://drive.google.com/uc?id=1WWIY89soGJR2hDTC6zQyS0NiTU_e5AgV" -O data/squirrel-v2-audited-coco.zip
+unzip -q data/squirrel-v2-audited-coco.zip -d data/
+```
+
+#### Option 2: Manual download
+
+1. Download [`squirrel-v2-audited-coco.zip`](https://drive.google.com/file/d/1WWIY89soGJR2hDTC6zQyS0NiTU_e5AgV/view?usp=sharing) from Google Drive.
+2. Move the downloaded file into the `data/` folder in the project root (`data/squirrel-v2-audited-coco.zip`).
+3. Extract the archive into `data/`:
+
+```bash
+mkdir -p data
+unzip -q data/squirrel-v2-audited-coco.zip -d data/
+```
+
+### Verification
+
+Ensure the extracted directory structure matches the layout expected by the notebooks:
+
+```text
+data/squirrel-v2-audited-coco/
+├── .complete.json
+├── decisions_applied.json
+├── export_summary.json
+├── train/
+│   ├── _annotations.coco.json
+│   └── *.jpg
+├── valid/
+│   ├── _annotations.coco.json
+│   └── *.jpg
+└── test/
+    ├── _annotations.coco.json
+    └── *.jpg
+```
+
+Run a quick check:
+
+```bash
+# Verify the presence of splits and the completion manifest
+ls -la data/squirrel-v2-audited-coco/
+```
+
+Once extracted, you can directly run [`squirrel_detection_rfdetr_medium_v2.ipynb`](squirrel_detection_rfdetr_medium_v2.ipynb), [`squirrel_detection_yolo26_medium_v2.ipynb`](squirrel_detection_yolo26_medium_v2.ipynb), or [`squirrel_detection_yolov5_medium_v2.ipynb`](squirrel_detection_yolov5_medium_v2.ipynb).
