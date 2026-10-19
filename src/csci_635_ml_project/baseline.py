@@ -20,7 +20,7 @@ from .baseline_data import (ULTRALYTICS_VERSION, YOLOV5_COMMIT, dataset_fingerpr
 def default_config(model: str) -> dict:
     if model not in {"yolo26", "yolov5"}:
         raise ValueError("Unknown baseline model")
-    return dict(model=model, epochs=200, patience=30, imgsz=640, seed=42, batch_candidates=[16, 8, 4],
+    return dict(model=model, epochs=30, patience=30, imgsz=640, seed=42, batch_candidates=[16, 8, 4],
                 workers=4, amp=True, save_period=10, optimizer="auto" if model == "yolo26" else "SGD",
                 prediction_floor=0.0001, max_detections=100, matching_iou=.5,
                 nms_iou=.7 if model == "yolo26" else .45,
@@ -128,10 +128,10 @@ def _run_job(run, action, **kwargs):
         if key.startswith(("CLEARML_API_", "WANDB_API_", "COMET_API_")):
             env.pop(key)
     log = run / "logs" / f"{job.stem}.log"; log.parent.mkdir(exist_ok=True)
-    with log.open("w") as output:
+    with log.open("w", encoding="utf-8") as output:
         process = subprocess.Popen([sys.executable, "-u", "-m", "csci_635_ml_project.baseline_worker", str(job)],
                                    cwd=context["root"], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                   text=True, bufsize=1)
+                                   text=True, bufsize=1, encoding="utf-8")
         try:
             for line in process.stdout:
                 safe = redact(line)
