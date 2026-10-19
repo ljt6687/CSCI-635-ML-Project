@@ -216,3 +216,14 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local squirrel dataset, experiments, and model weights
+data/
+output/
+output_yolo26/
+output_yolov5/
+output_model_comparison/
+.env.*
+!.env.example
+rf-detr-medium.pth
+research
