@@ -281,3 +281,17 @@ All three checkpoint files were hashed and matched their training-completion rec
 **Additional sources:** [YOLO26 NMS-free test metrics](/home/ss3813/github/ML/CSCI-635-ML-Project/output_yolo26/runs/20260928T202126Z-e14d4f/reports/end2end/test/metrics.json), [YOLO26 benchmarks](/home/ss3813/github/ML/CSCI-635-ML-Project/output_yolo26/runs/20260928T202126Z-e14d4f/benchmarks/accuracy/cuda.json), [YOLOv5 benchmarks](/home/ss3813/github/ML/CSCI-635-ML-Project/output_yolov5/runs/20260929T154035Z-d7f2b6/benchmarks/accuracy/cuda.json), [audited dataset manifest](/home/ss3813/github/ML/CSCI-635-ML-Project/data/squirrel-v2-audited-coco/.complete.json), [test annotations](/home/ss3813/github/ML/CSCI-635-ML-Project/data/squirrel-v2-audited-coco/test/_annotations.coco.json), [common metric implementation](/home/ss3813/github/ML/CSCI-635-ML-Project/src/csci_635_ml_project/baseline_reports.py).
 
 A [machine-readable verification snapshot](/home/ss3813/github/ML/CSCI-635-ML-Project/reports/final_held_out_test_metrics.json) accompanies this report, including full-precision metrics, all per-class rows, confusion matrices (ground-truth rows × predicted columns, with background last), and excluded RF-DETR output counts. Original run artifacts were left unchanged. Source links point to this workspace; run directories are Git-ignored and should be retained with the report for full reproducibility.
+
+## YOLOv5m Test Results
+
+We trained the YOLOv5m model for 200 epochs and evaluated its best checkpoint (best.pt) on the held-out test dataset. The test set contained 1,284 images with 1,380 annotated objects across 11 squirrel classes. We used YOLOv5's val.py with --task test, an image size of 640, and a batch size of 8.
+
+| Metric | Result |
+|---|---:|
+| Precision | 79.3% |
+| Recall | 69.5% |
+| mAP@50 | 74.1% |
+| mAP@50–95 | 54.8% |
+
+
+The evaluation outputs, including the confusion matrix, performance curves, and sample predictions, are saved in Google Drive under YOLOv5_Squirrel_Test/squirrel_200epochs_test/.
